@@ -23,12 +23,12 @@
 
 ---
 
-## Problem
+## Difficulty
 
 - PV数: `Map<PageURL, Long>`を的なのを持ち、アクセスのたびにインクリメントすればよい
 - ユニークユーザー数: どうやって出すか？
   - Count-distinct problemとよばれる
-  - ナイーブな方法だとどうしても非効率になる
+  - ナイーブな方法だと非効率になる
 
 ---
 
@@ -60,7 +60,7 @@ class UniqueUserStats {
   - 100URLで360GB
   - たくさんのWebサイトを計測することを考えるとリーズナブルじゃない
 - abuse耐性が無い
-  - でたらめなcookieIdを送り続けると、いずれMemoryに保持できる数を超えてサーバーが死ぬ
+  - でたらめなcookieIdを送り続けるといずれMemoryに保持できる数を超えてサーバーが死ぬ
 
 ---
 
@@ -85,7 +85,7 @@ GROUP BY
 
 - 確率的アルゴリズムによる近似値を使う
 - **HyperLogLog**
-  - Philippe Flajolet et al. (2007). HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm
+  - Philippe Flajolet et al., 2007. HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm
   - 集合のCardinality(要素数)をO(1) spaceで高精度に近似できる
   - このスライドでは以下HLLと省略
 
@@ -94,7 +94,7 @@ GROUP BY
 ## Agenda
 
 1. How HLL works
-2. HLL on Redis and BigQuery
+2. HLL on Redis
 3. Deep dive into Redis HLL
 4. HyperMinHash
 
@@ -106,7 +106,7 @@ GROUP BY
 
 ## Intuitive explanation
 
-- 64bit intを一様ランダムに選ぶとき、左から0がk bit連続している確率は`1/2^k`
+- 64bit intを一様ランダムに選ぶとき、先頭から0がk bit連続している確率は`1/2^k`
 
 ![i003](img/i003.png)
 
@@ -114,14 +114,14 @@ GROUP BY
 
 ## Intuitive explanation
 
-- 言いかえると、`2^k`回試行しないと左から0がk bit連続する数が出ない
-- 「64bit intを一様ランダムに選ぶ」ことを繰り返すとして、「最大で左から0が何bit連続したか」だけ記録しておけば「試行した回数」がわかる
+- 言いかえると、`2^k`回試行しないと先頭から0がk bit連続する数が出ない
+- 「64bit intを一様ランダムに選ぶ」ことを繰り返すとき「最大で先頭から0が何bit連続したか」だけ記録しておけば「試行した回数」を推定できる
 
 ---
 
 ## Use hash function for randomization
 
-- よい64bit hash関数を使うと、hash値は一様にランダムな64bit intとなる
+- よい64bit hash関数を使うと、hash値は64bit int空間に一様に分布する
 - つまり、cardinalityが`N`であるデータセットの要素をhash関数にかける ⇔ 「64bit intを一様ランダムに選ぶ」試行をN回繰り返す
 
 ---
@@ -132,8 +132,8 @@ GROUP BY
 
 ## What does "LogLog" means
 
-- いま、cardinality `N` を「左から連続する0のbit数」で近似した
-- つまり`log2(N)`までの数を表現できればよい
+- いま、cardinality `N` を「先頭から連続する0のbit数」で近似した
+- つまり`log2(N)`までの数を保持できればよい
 - `log2(log2(N))` bit
 
 ---
@@ -151,14 +151,17 @@ GROUP BY
 
 ## HLL is a random variable
 
-- HLLは「データセット
+- HLLは任意のデータセットに対して前述のアルゴリズムで値を定める確率変数である
+- この確率変数の期待値がcardinality `n`に等しい
+- 精度の評価は統計の手法を使う
 
 ---
 
 ### Accuracy
 
-- bucket数を`m`としたとき、標準誤差 `1.04/√m`
-  - Flajolet et al. (2007)
+- bucket数を`m`としたとき、標準誤差 = `1.04/√m`
+  - Flajolet et al., 2007.
+  - ここでいう標準誤差 := 標準偏差を真のcardinalityで割ったもの(相対誤差)
   - Redisはdefaultだと16384 bucketなので`1.04/√16384 = 0.008125`
   - => 誤差0.81%
 
@@ -167,22 +170,35 @@ GROUP BY
 ## Accuracy
 
 - 「どんな入力に対しても誤差が0.81%におさまる」という意味ではない
-- 例: Redis 4.0.9で、以下の入力は誤差が20%となる
+- 例: Redis 4.0.9で以下の入力は相対誤差-90%となる
 
 ```
-$ redis-cli PFADD foo 351170 351171 351172 351173 351174\
-                      351175 351176 351177 351178 351179
+$ redis-cli PFADD foo 98567648 19857710 293736832 \                                                                                                                                                  master
+                      275337325 304058906 154945851 \
+                      227134849 290132289 168593923 \
+                      279957693
 $ redis-cli PFCOUNT foo
-(integer) 8
+(integer) 1
 ```
 
 ---
 
-## HLL Sketch
+## HLL sketch
+
+- 「連続する0のbit数」を保持したm個のbucketをsketchとよぶ
+
+```java
+class HLLSketch {
+    private static final int M = 16384;
+    private byte[] buckets = new byte[M];
+}
+```
 
 ---
 
 ## Sketch and estimator
+
+- HLL sketchはFlajolet et al. (2007)が初出ではない
 
 ---
 
@@ -194,7 +210,22 @@ $ redis-cli PFCOUNT foo
 
 ---
 
-## HLL on Redis
+# HLL on Redis
+
+---
+
+## Using HLL on Redis
+
+- RedisのHLL関連commandは`PFxxx`
+
+```bash
+$ for i in `seq 1000`; do
+  redis-cli PFADD foo $i > /dev/null
+done
+
+$ redis-cli PFCOUNT foo
+(integer) 1001
+```
 
 ---
 
@@ -206,13 +237,9 @@ $ redis-cli PFCOUNT foo
 
 ---
 
-## HLL on BigQuery
-
----
-
 ## Deep dive into Redis HLL
 
-- 最初に導入されたバージョン
+- http://antirez.com/news/75
 
 ---
 
@@ -228,12 +255,54 @@ $ redis-cli PFCOUNT foo
 
 ---
 
+# HyperMinHash
+
+---
+
+## Intersection cardinality
+
+- HLLを使うことで省メモリにcardinalityを保持・計算でき、unionも取れることがわかった
+- unionが取れるならintersectionも欲しくなるのが人情
+
+---
+
+### Hoge Analytics 2.0
+
+![i005](img/i005.png)
+
+---
+
+## Difficulty
+
+- 以下のディメンションを任意に組み合わせたい
+  - 地域 (100種類)
+  - URL (100ページ)
+  - OS (10種類)
+  - 流入キーワード (10000種類)
+  - 流入元サイト (1000サイト)
+- 1兆通り
+  - Redisの場合、sketchは12KB => 計12PB
+
+---
+
+## Probabilistic approach again
+
+- **MinHash**
+  - Jaccard Indexを近似する確率的アルゴリズム
+
+---
+
+## MinHash and HyperLogLog
+
+- 
+
+---
+
 ## HyperMinHash
 
 ---
 
-## HyperMinHash sketch
-
----
-
 ## Conclusion
+
+- HyperLogLog sketchは面白い
+- 確率的アルゴリズムは面白い
