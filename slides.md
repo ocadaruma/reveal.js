@@ -85,9 +85,9 @@ GROUP BY
 
 - 確率的アルゴリズムによる近似値を使う
 - **HyperLogLog**
-  - 集合のCardinality(要素数)を近似するアルゴリズム
-  - O(1) spaceで高精度に近似できる
-  - 本資料では、以下HLLと略する
+  - Philippe Flajolet et al. (2007). HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm
+  - 集合のCardinality(要素数)をO(1) spaceで高精度に近似できる
+  - このスライドでは以下HLLと省略
 
 ---
 
@@ -106,38 +106,75 @@ GROUP BY
 
 ## Intuitive explanation
 
-- 64bit intを一様ランダムに選んだとき、最初に0がk bit連続する確率は`1/2^k`
+- 64bit intを一様ランダムに選ぶとき、左から0がk bit連続している確率は`1/2^k`
+
+![i003](img/i003.png)
 
 ---
 
 ## Intuitive explanation
 
-- i.e. `2^k`回試行しないと最初に0がk bit連続する数が出ない
+- 言いかえると、`2^k`回試行しないと左から0がk bit連続する数が出ない
+- 「64bit intを一様ランダムに選ぶ」ことを繰り返すとして、「最大で左から0が何bit連続したか」だけ記録しておけば「試行した回数」がわかる
+
+---
+
+## Use hash function for randomization
+
+- よい64bit hash関数を使うと、hash値は一様にランダムな64bit intとなる
+- つまり、cardinalityが`N`であるデータセットの要素をhash関数にかける ⇔ 「64bit intを一様ランダムに選ぶ」試行をN回繰り返す
+
+---
+
+![i004](img/i004.png)
 
 ---
 
 ## What does "LogLog" means
 
-- N (簡単のためN = `2^k`とする)
+- いま、cardinality `N` を「左から連続する0のbit数」で近似した
+- つまり`log2(N)`までの数を表現できればよい
+- `log2(log2(N))` bit
 
 ---
 
 ## Stochastic averaging
 
+- このままだと精度が悪いし、2^k単位でしか近似できない
+-
+
+---
+
+## Entire HLL algorithm 
+
+---
+
+## HLL is a random variable
+
+- HLLは「データセット
+
+---
+
+### Accuracy
+
+- bucket数を`m`としたとき、標準誤差 `1.04/√m`
+  - Flajolet et al. (2007)
+  - Redisはdefaultだと16384 bucketなので`1.04/√16384 = 0.008125`
+  - => 誤差0.81%
+
 ---
 
 ## Accuracy
 
-- Relative error
+- 「どんな入力に対しても誤差が0.81%におさまる」という意味ではない
+- 例: Redis 4.0.9で、以下の入力は誤差が20%となる
 
----
-
-## Accuracy
-
-- HLLによる推定値は確率変数
-- 期待値がcardinalityになる
-
-## Entire HLL algorithm
+```
+$ redis-cli PFADD foo 351170 351171 351172 351173 351174\
+                      351175 351176 351177 351178 351179
+$ redis-cli PFCOUNT foo
+(integer) 8
+```
 
 ---
 
