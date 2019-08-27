@@ -7,11 +7,10 @@
 
 ## Introduction
 
-- リアルタイムアクセス解析システムを作るとする
-  - "HogeAnalytics"
-  - Webサイトのアクセス統計をリアルタイムに提供
-      - ページごとのPV数
-      - ページごとのユニークユーザー(cookie)数
+- リアルタイムアクセス解析システム "HogeAnalytics" を作るとする
+- Webサイトのアクセス統計をリアルタイムに提供
+  - ページごとのPV数
+  - ページごとのユニークユーザー(cookie)数
 
 ---
 
@@ -140,8 +139,14 @@ GROUP BY
 
 ## Stochastic averaging
 
-- このままだと精度が悪いし、2^k単位でしか近似できない
--
+- これだけだと精度が悪いし、2^k単位でしか近似できない
+- ハッシュ値の先頭`p` bitを使って、`m=2^p`個のbucketに振り分ける
+- bucketごとに、`64-p` bitのうち先頭から連続する0のbit数を保持する
+- bucketごとの値をいい感じに足し合わせる
+
+---
+
+
 
 ---
 
@@ -161,7 +166,7 @@ GROUP BY
 
 - bucket数を`m`としたとき、標準誤差 = `1.04/√m`
   - Flajolet et al., 2007.
-  - ここでいう標準誤差 := 標準偏差を真のcardinalityで割ったもの(相対誤差)
+  - ここでいう標準誤差 := 標準偏差を真のcardinalityで割って得た相対誤差
   - Redisはdefaultだと16384 bucketなので`1.04/√16384 = 0.008125`
   - => 誤差0.81%
 
@@ -169,7 +174,7 @@ GROUP BY
 
 ## Accuracy
 
-- 「どんな入力に対しても誤差が0.81%におさまる」という意味ではない
+- 「どんな入力に対しても誤差が0.81%以内」という意味ではない
 - 例: Redis 4.0.9で以下の入力は相対誤差-90%となる
 
 ```
@@ -183,9 +188,17 @@ $ redis-cli PFCOUNT foo
 
 ---
 
+## What causes high error ?
+
+- ハッシュ値の衝突（自明）
+  - 一般的にはハッシュのpre imageを求めるのは困難
+- 同じbucket、同じ先頭の0 bit数となる場合
+
+---
+
 ## HLL sketch
 
-- 「連続する0のbit数」を保持したm個のbucketをsketchとよぶ
+- 先頭の連続する0のbit数を保持した`m`個のbucketをsketchとよぶ
 
 ```java
 class HLLSketch {
@@ -262,7 +275,7 @@ $ redis-cli PFCOUNT foo
 ## Intersection cardinality
 
 - HLLを使うことで省メモリにcardinalityを保持・計算でき、unionも取れることがわかった
-- unionが取れるならintersectionも欲しくなるのが人情
+- unionが取れるならintersectionも欲しくなる
 
 ---
 
