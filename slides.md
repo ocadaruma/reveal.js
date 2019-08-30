@@ -191,6 +191,39 @@ byte[] sketch = new byte[m];
 
 ---
 
+## Pseudo code
+
+- Sketch construction
+
+```java
+byte[] sketch = new byte[m];
+
+for (String element : dataset) {
+    long hash = calcHash(element);
+    int bucket = calcBucket(hash);
+    byte leadingZeros = calcLeadingZeros(hash);
+    
+    sketch[bucket] = Math.max(sketch[bucket], leadingZeros);
+}
+```
+
+---
+
+## Pseudo code
+
+- Estimation
+
+```java
+double z = 0;
+for (byte leadingZeros : sketch) {
+    z += 1.0 / Math.pow(2, leadingZeros);
+}
+
+return alpha * m * m / z;
+```
+
+---
+
 ## HLL is a random variable
 
 - HLLは任意のデータセットに対して前述のアルゴリズムで値を定める確率変数である
@@ -235,27 +268,83 @@ $ redis-cli PFCOUNT foo
 
 ## Streaming update
 
-- HLL sketchに要素を追加するとき、全体を再構築する必要は無い
+- HLL sketch全体を再構築せずに、要素を追加できる
+
+```java
+public void add(String element) {
+    long hash = calcHash(element);
+    int bucket = calcBucket(hash);
+    byte leadingZeros = calcLeadingZeros(hash);
+    
+    sketch[bucket] = Math.max(sketch[bucket], leadingZeros);
+}
+```
 
 ---
 
 ## Merge two sketches
 
+- ２つのHLL sketchはloss lessでmergeできる
+  - (bucket数やhash関数は同じ前提)
 
+![i008](img/i008.png)
 
 ---
 
-## Estimation
+## Merge two sketches
+
+```java
+public byte[] merge(byte[] sketch1, byte[] sketch2) {
+    int m = sketch1.length;
+    byte[] merged = new byte[m];
+    
+    for (int i = 0; i < m; i++) {
+        merged[i] = Math.max(sketch1[i], sketch2[i]);
+    }
+    
+    return merged;
+}
+```
+
+---
+
+## Easy to parallelize
+
+- mergeがloss lessなので、大量のdatasetのHLL sketch構築は容易に並列化できる
+
+![i009](img/i009.png)
+
+---
+
+## Sketch & Estimation
 
 - HLL sketchはFlajolet et al. (2007)が初出ではない
+  - Durand & Flajolet., 2003. Loglog Counting of Large Cardinalities
+- sketch構築はHLLと同じだが、足し合わせ方が違う
+
+![i010](img/i010.png)
+
+---
+
+## LogLog-Beta
+
+- Jason Qin et al., 2016. LogLog-Beta and More: A New Algorithm for Cardinality Estimation Based on LogLog Counting
+
+![i011](img/i011.png)
+
+---
+
+## Otmar Ertl method
+
+- Otmar Ertl, 2017. New cardinality estimation algorithms for HyperLogLog sketches
+- Redis 5.0.5（現時点のlatest）で採用されているestimation
+- これも、sketchはオリジナルのHLLと同じ
 
 ---
 
 ## Improve sketch
 
----
 
-## Improve estimator
 
 ---
 
