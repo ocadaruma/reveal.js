@@ -57,7 +57,6 @@ class UniqueUserStats {
 - UUID StringのcookieIdを考える(36 byte)
   - 1億UUの保存に3.6GB
   - 100URLで360GB
-  - たくさんのWebサイトを計測することを考えるとリーズナブルじゃない
 - abuse耐性が無い
   - でたらめなcookieIdを送り続けるといずれMemoryに保持できる数を超えてサーバーが死ぬ
 
@@ -146,19 +145,25 @@ GROUP BY
 
 ---
 
-
+![i006](img/i006.png)
 
 ---
 
-## Entire HLL algorithm 
+## Stochastic averaging
+
+```java
+class HLLSketch {
+    private static final int M = 16384;
+    private byte[] buckets = new byte[M];
+}
+``` 
 
 ---
 
 ## HLL is a random variable
 
 - HLLは任意のデータセットに対して前述のアルゴリズムで値を定める確率変数である
-- この確率変数の期待値がcardinality `n`に等しい
-- 精度の評価は統計の手法を使う
+- この確率変数の期待値がcardinality `n`に等しいということ
 
 ---
 
@@ -190,9 +195,9 @@ $ redis-cli PFCOUNT foo
 
 ## What causes high error ?
 
-- ハッシュ値の衝突（自明）
-  - 一般的にはハッシュのpre imageを求めるのは困難
-- 同じbucket、同じ先頭の0 bit数となる場合
+- ハッシュ値の衝突
+  - だが一般的にはハッシュのpre imageを求めるのは困難
+- 同じbucketへの振り分けで、同じ先頭の0 bit数を持つ場合
 
 ---
 
