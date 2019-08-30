@@ -24,10 +24,10 @@
 
 ## Difficulty
 
-- PV数: `Map<PageURL, Long>`を的なのを持ち、アクセスのたびにインクリメントすればよい
+- PV数: `Map<PageURL, Long>`のようなデータを持って、アクセスのたびにインクリメントすればよい
 - ユニークユーザー数: どうやって出すか？
   - Count-distinct problemとよばれる
-  - ナイーブな方法だと非効率になる
+  - ナイーブな方法だとどうしても非効率になる
 
 ---
 
@@ -58,7 +58,7 @@ class UniqueUserStats {
   - 1億UUの保存に3.6GB
   - 100URLで360GB
 - abuse耐性が無い
-  - でたらめなcookieIdを送り続けるといずれMemoryに保持できる数を超えてサーバーが死ぬ
+  - でたらめなcookieIdを送り続けるといずれメモリに保持できる数を超えてサーバーが死ぬ
 
 ---
 
@@ -84,12 +84,12 @@ GROUP BY
 - 確率的アルゴリズムによる近似値を使う
 - **HyperLogLog**
   - Philippe Flajolet et al., 2007. HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm
-  - 集合のCardinality(要素数)をO(1) spaceで高精度に近似できる
+  - 集合のcardinality(要素数)をO(1) spaceで高精度に近似できる
   - このスライドでは以下HLLと省略
 
 ---
 
-## Agenda
+# Agenda
 
 1. How HLL works
 2. HLL on Redis
@@ -103,7 +103,7 @@ GROUP BY
 
 ## Intuitive explanation
 
-- 64bit intを一様ランダムに選ぶとき、先頭から0がk bit連続している確率は`1/2^k`
+- 64bit intを一様ランダムに選ぶとき、上位k bitが連続して0となる確率は`1/2^k`
 
 ![i003](img/i003.png)
 
@@ -111,8 +111,8 @@ GROUP BY
 
 ## Intuitive explanation
 
-- 言いかえると、`2^k`回試行しないと先頭から0がk bit連続する数が出ない
-- 「64bit intを一様ランダムに選ぶ」ことを繰り返すとき「最大で先頭から0が何bit連続したか」だけ記録しておけば「試行した回数」を推定できる
+- 言いかえると、`2^k`回試行しないと上位k bitが連続して0であるような数が出ない
+- 「64bit intを一様ランダムに選ぶ」ことを繰り返すとき「上位何bit 0が連続したか」だけ記録しておけば「試行した回数」を推定できる
 
 ---
 
@@ -129,7 +129,7 @@ GROUP BY
 
 ## What does "LogLog" means
 
-- いま、cardinality `N` を「先頭から連続する0のbit数」で近似した
+- いま、cardinality `N` を「上位の連続した0-bit数」で近似した
 - つまり`log2(N)`までの数だけで`N`を近似したことになる
 - `log2(log2(N))` bit
 
@@ -138,15 +138,15 @@ GROUP BY
 ## Stochastic averaging
 
 - これだけだと精度が悪いし、2^k単位でしか近似できない
-- 複数のhash関数を使ってその平均を取ることで正確になる
+- 複数のhash関数を使ってその平均を取ることで精度が向上する
 
 ---
 
 ## Stochastic averaging
 
 - データセットの各要素に対し複数のhash関数をかけるのは時間がかかる
-- ハッシュ値の先頭`p` bitを使って、`m=2^p`個のbucketに振り分ける
-- bucketごとに、残りの`64-p` bitを使って、先頭から連続する0-bitを数える
+- かわりに、ハッシュ値の先頭`p` bitを使って、`m = 2^p`個のbucketに振り分ける
+- bucketごとに、残りの`64 - p` bitを使って、上位の連続する0-bitを数える
 
 ---
 
@@ -156,7 +156,7 @@ GROUP BY
 
 ## HLL Sketch
 
-- この、先頭から連続する0-bit数を保持した`m`個のbucket列をsketchとよぶ
+- この、上位の連続する0-bit数を保持した`m`個のbucket列をsketchとよぶ
 
 ```java
 byte[] sketch = new byte[m];
@@ -166,15 +166,15 @@ byte[] sketch = new byte[m];
 
 ## Stochastic averaging
 
-- sketchをなめて、bucketごとの値を**いい感じに**足し合わせる
+- sketchを走査し、bucketごとの値を平均して最終的な値を計算する
   - Flajolet & Martin., 1985. Probabilistic Counting Algorithms for Data Base Applications
 
 ---
 
 ## Estimation
 
-- sketchをMとしてM[i]でi番目のbucketを表すと、HLLでは以下のように最終的な値を計算する
-- (`αm`は、bucket数`m`に依存した補正係数)
+- sketchをMとしてM[i]でi番目のbucketを表すと、HLLでは以下の式で最終的なcardinalityを計算する
+- (`αm`は、bucket数`m`に依存したbias correction factor)
 
 ![i007](img/i007.png)
 
@@ -182,11 +182,13 @@ byte[] sketch = new byte[m];
 
 ## Entire HLL process
 
-- したがって、HLLは2 stepにわけられる
+- したがってHLLは2 stepにわけられる
 - (1) Sketch construction
-  - データセットをなめて、各要素をbucketに振り分け、先頭の連続する0-bitを数えて保存
+  - データセットを走査して各要素をbucketに振り分け、上位の連続する0-bitを数えて保存
+  - データセットの要素数を`N`とすると `O(N)` time
 - (2) Estimation
-  - sketchをなめて、前述の式で値を計算する
+  - sketchを走査して、前述の式でcardinalityを計算する
+  - bucket数は固定なので`O(1)` time
 
 ---
 
@@ -230,12 +232,12 @@ return alpha * m * m / z;
 
 ---
 
-### Accuracy
+## Accuracy
 
 - bucket数を`m`としたとき、標準誤差 = `1.04/√m`
-  - Flajolet et al., 2007.
+  - by Flajolet et al., 2007.
   - ここでいう標準誤差 := 標準偏差を真のcardinalityで割って得た相対誤差
-  - Redisはdefaultだと16384 bucketなので`1.04/√16384 = 0.008125`
+  - Redisはデフォルトだと16384 bucketなので`1.04/√16384 = 0.008125`
   - => 誤差0.81%
 
 ---
@@ -260,21 +262,21 @@ $ redis-cli PFCOUNT foo
 
 - ハッシュ値の衝突
   - だが一般的にはハッシュのpre imageを求めるのは困難
-- 同じbucketへの振り分けられて、かつ同じ数先頭の0 bitが連続している場合
-  - 98567648, 19857710,...はすべて、Redisのhash関数で`bucket 0 && 先頭の連続する0の数 = 0`になる
+- 同じbucketへの振り分けられて、かつ上位0 bitが同じ数連続している場合
+  - 98567648, 19857710,...はすべて、Redis HLLにおいて`bucket = 0 && 連続する0のbit数 = 0`になる
 
 ---
 
 ## Streaming update
 
-- HLL sketch全体を再構築せずに、要素を追加できる
+- HLL sketch全体を再構築することなく要素を追加できる
 
 ```java
 public void add(String element) {
     long hash = calcHash(element);
     int bucket = calcBucket(hash);
     byte leadingZeros = calcLeadingZeros(hash);
-    
+
     sketch[bucket] = Math.max(sketch[bucket], leadingZeros);
 }
 ```
@@ -309,7 +311,7 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 
 ## Easy to parallelize
 
-- mergeがloss lessなので、大量のdatasetのHLL sketch構築は容易に並列化できる
+- mergeがloss lessなので、大量のデータセットのHLL sketch構築は容易に並列化できる
 
 ![i009](img/i009.png)
 
@@ -319,7 +321,7 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 
 - HLL sketchはFlajolet et al., 2007が初出ではない
   - Durand & Flajolet., 2003. Loglog Counting of Large Cardinalities
-- sketch構築はHLLと同じだが、足し合わせ方が違う
+- sketch構築はHLLと同じだが、cardinalityの計算方法が違う
 
 ![i010](img/i010.png)
 
@@ -337,7 +339,7 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 
 - Otmar Ertl, 2017. New cardinality estimation algorithms for HyperLogLog sketches
 - Redis 5.0.5（現時点のlatest）で採用されているestimation
-- これも、sketchはオリジナルのHLLと同じ
+- これもsketchはオリジナルのHLLと同じで、計算方法が違う
 
 ---
 
@@ -348,6 +350,7 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 ## Using HLL on Redis
 
 - RedisのHLL関連commandは`PFxxx`
+  - Philippe Flajoletに由来
 
 ```bash
 $ for i in `seq 1000`; do
@@ -387,6 +390,12 @@ $ redis-cli GET baz
 
 ## Performance
 
+- PFADD: < 1 microsec
+- PFMERGE: ~ 200 microsec (okada調べ)
+  - High trafficな場合は注意
+
+![i014](img/i014.png)
+
 ---
 
 ## History
@@ -394,8 +403,8 @@ $ redis-cli GET baz
 - Redis 2.8.9で導入
   - https://raw.githubusercontent.com/antirez/redis/2.8.9/00-RELEASENOTES
 - Linear CountingとHLLを併用
-  - cardinalityが小さいとき、HLLは精度が低い
-  - Flajolet et al., 2007でも併用について言及
+  - HLLは小さいcardinalityに対して誤差が大きくなる
+  - Flajolet et al., 2007でも提案されている手法
 
 ---
 
@@ -414,7 +423,50 @@ $ redis-cli GET baz
 
 ---
 
-## HLL Representation
+## Redis HLL Representation
+
+- RedisはHLL sketchを2通りでencodeする
+  - sparse representation
+  - dense representation
+- Redis HLLのbinary表現は以下
+
+```c
+struct hllhdr {
+    char magic[4];      /* "HYLL" */
+    uint8_t encoding;   /* HLL_DENSE or HLL_SPARSE. */
+    uint8_t notused[3]; /* Reserved for future use, must be zero. */
+    uint8_t card[8];    /* Cached cardinality, little endian. */
+    uint8_t registers[]; /* Data bytes. */
+};
+```
+
+hyperloglog.c 
+
+---
+
+## Sparse representation
+
+- Redisデフォルトではregister数`m = 16384`
+  - 以下Redisの用語と揃えてbucket = registerと表記
+- cardinalityが小さいうちは、ほとんどのregisterは値が0のまま
+- sketchをrun length encodingで圧縮して保持することで空間効率を高める
+
+---
+
+## Dense representation
+
+- sparse representationの使用領域がしきい値を超えると、denseにpromoteされる
+  - `hll_sparse_max_bytes` configで指定
+- 1要素あたり6 bitの`m`要素の配列として表現
+  - registerの値は高々64bitなので、`log2(64) = 6 bit`で十分
+
+---
+
+## Dense representation
+
+- ただし6 bitのprimitiveは無いのでuint8_t arrayとして保持
+  - `16384 * (6/8) = 12288` bytes
+- bit shiftingでうまいことregisterの値を取り出す
 
 ---
 
@@ -451,21 +503,38 @@ $ redis-cli GET baz
 ## Probabilistic approach again
 
 - **MinHash**
+  - Andrei Z. Broder, 1997. On the resemblance and containment of documents
   - Jaccard Indexを近似する確率的アルゴリズム
+
+![i012](img/i012.png)
 
 ---
 
-## MinHash and HyperLogLog
+## HyperLogLog and MinHash
 
-- 
+- AdRoll tech blogで紹介されている手法
+  - http://tech.adroll.com/blog/data/2013/07/10/hll-minhash.html
+
+![i013](img/i013.png)
+
+---
+
+## MinHash
+
+- `N`をデータセットのcardinalityとすると、MinHash sketchは`O(log(N))` space必要
+- HLLのように空間効率のよい表現がほしい
 
 ---
 
 ## HyperMinHash
 
+- Yu & Weber, 2017. HyperMinHash: MinHash in LogLog space
+- hash値のbitパターンをうまいことencodeして、`O(log(log(N)))` spaceで、MinHashとHLL両方の性質を実現
+- Jaccard Indexの推定とHLLの推定が、HyperMinHash sketchのみで可能
+
 ---
 
-## Conclusion
+# Conclusion
 
 - HyperLogLog sketchは面白い
 - 確率的アルゴリズムは面白い
