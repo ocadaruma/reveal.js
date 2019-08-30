@@ -131,7 +131,7 @@ GROUP BY
 ## What does "LogLog" means
 
 - いま、cardinality `N` を「先頭から連続する0のbit数」で近似した
-- つまり`log2(N)`までの数を保持できればよい
+- つまり`log2(N)`までの数だけで`N`を近似したことになる
 - `log2(log2(N))` bit
 
 ---
@@ -139,9 +139,15 @@ GROUP BY
 ## Stochastic averaging
 
 - これだけだと精度が悪いし、2^k単位でしか近似できない
+- 複数のhash関数を使ってその平均を取ることで正確になる
+
+---
+
+## Stochastic averaging
+
+- データセットの各要素に対し複数のhash関数をかけるのは時間がかかる
 - ハッシュ値の先頭`p` bitを使って、`m=2^p`個のbucketに振り分ける
-- bucketごとに、`64-p` bitのうち先頭から連続する0のbit数を保持する
-- bucketごとの値をいい感じに足し合わせる
+- bucketごとに、残りの`64-p` bitを使って、先頭から連続する0-bitを数える
 
 ---
 
@@ -149,14 +155,39 @@ GROUP BY
 
 ---
 
-## Stochastic averaging
+## HLL Sketch
+
+- この、先頭から連続する0-bit数を保持した`m`個のbucket列をsketchとよぶ
 
 ```java
-class HLLSketch {
-    private static final int M = 16384;
-    private byte[] buckets = new byte[M];
-}
-``` 
+byte[] sketch = new byte[m];
+```
+
+---
+
+## Stochastic averaging
+
+- sketchをなめて、bucketごとの値を**いい感じに**足し合わせる
+  - Flajolet & Martin., 1985. Probabilistic Counting Algorithms for Data Base Applications
+
+---
+
+## Estimation
+
+- sketchをMとしてM[i]でi番目のbucketを表すと、HLLでは以下のように最終的な値を計算する
+- (`αm`は、bucket数`m`に依存した補正係数)
+
+![i007](img/i007.png)
+
+---
+
+## Entire HLL process
+
+- したがって、HLLは2 stepにわけられる
+- (1) Sketch construction
+  - データセットをなめて、各要素をbucketに振り分け、先頭の連続する0-bitを数えて保存
+- (2) Estimation
+  - sketchをなめて、前述の式で値を計算する
 
 ---
 
@@ -197,24 +228,24 @@ $ redis-cli PFCOUNT foo
 
 - ハッシュ値の衝突
   - だが一般的にはハッシュのpre imageを求めるのは困難
-- 同じbucketへの振り分けで、同じ先頭の0 bit数を持つ場合
+- 同じbucketへの振り分けられて、かつ同じ数先頭の0 bitが連続している場合
+  - 98567648, 19857710,...はすべて、Redisのhash関数で`bucket 0 && 先頭の連続する0の数 = 0`になる
 
 ---
 
-## HLL sketch
+## Streaming update
 
-- 先頭の連続する0のbit数を保持した`m`個のbucketをsketchとよぶ
-
-```java
-class HLLSketch {
-    private static final int M = 16384;
-    private byte[] buckets = new byte[M];
-}
-```
+- HLL sketchに要素を追加するとき、全体を再構築する必要は無い
 
 ---
 
-## Sketch and estimator
+## Merge two sketches
+
+
+
+---
+
+## Estimation
 
 - HLL sketchはFlajolet et al. (2007)が初出ではない
 
