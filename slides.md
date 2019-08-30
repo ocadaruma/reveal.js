@@ -93,8 +93,7 @@ GROUP BY
 
 1. How HLL works
 2. HLL on Redis
-3. Deep dive into Redis HLL
-4. HyperMinHash
+3. HyperMinHash
 
 ---
 
@@ -318,7 +317,7 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 
 ## Sketch & Estimation
 
-- HLL sketchはFlajolet et al. (2007)が初出ではない
+- HLL sketchはFlajolet et al., 2007が初出ではない
   - Durand & Flajolet., 2003. Loglog Counting of Large Cardinalities
 - sketch構築はHLLと同じだが、足し合わせ方が違う
 
@@ -342,12 +341,6 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 
 ---
 
-## Improve sketch
-
-
-
----
-
 # HLL on Redis
 
 ---
@@ -367,7 +360,28 @@ $ redis-cli PFCOUNT foo
 
 ---
 
-## Mergeability
+## Merge
+
+```bash
+$ for i in `seq 2000 2500`; do
+  redis-cli PFADD bar $i > /dev/null
+done
+
+$ redis-cli PFMERGE merged foo bar
+$ redis-cli PFCOUNT merged
+(integer) 1506
+```
+
+---
+
+## Get sketch
+
+```bash
+$ reids-cli PFADD baz 1
+
+$ redis-cli GET baz
+"HYLL\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80]f\x80b\x97"
+```
 
 ---
 
@@ -375,21 +389,32 @@ $ redis-cli PFCOUNT foo
 
 ---
 
-## Deep dive into Redis HLL
+## History
 
-- http://antirez.com/news/75
-
----
-
-## Redis v4
-
----
-
-## Redis v5
+- Redis 2.8.9で導入
+  - https://raw.githubusercontent.com/antirez/redis/2.8.9/00-RELEASENOTES
+- Linear CountingとHLLを併用
+  - cardinalityが小さいとき、HLLは精度が低い
+  - Flajolet et al., 2007でも併用について言及
 
 ---
 
-## Redis HLL vulnerability
+## Redis v4.0.0
+
+- https://raw.githubusercontent.com/antirez/redis/4.0.0/00-RELEASENOTES
+- estimationがLogLog-Betaに切り替わった
+- Linear Countingを使わなくなった
+
+---
+
+## Redis v5.0.0
+
+- https://raw.githubusercontent.com/antirez/redis/5.0.0/00-RELEASENOTES
+- estimationがOtmar Ertl, 2017. による方式に切り替わった
+
+---
+
+## HLL Representation
 
 ---
 
