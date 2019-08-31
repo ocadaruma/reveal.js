@@ -7,7 +7,7 @@
 
 ## Introduction
 
-- リアルタイムアクセス解析システム "HogeAnalytics" を作るとする
+- リアルタイムアクセス解析システム`HogeAnalytics`を作りたい
 - Webサイトのアクセス統計をリアルタイムに提供
   - ページごとのPV数
   - ページごとのユニークユーザー(cookie)数
@@ -24,10 +24,11 @@
 
 ## Difficulty
 
-- PV数: `Map<PageURL, Long>`のようなデータを持って、アクセスのたびにインクリメントすればよい
-- ユニークユーザー数: どうやって出すか？
+- PV数: アクセスがあるたびにintegerをインクリメントすればよい
+  - URLあたり4 byteとか8 byte
+- ユニークユーザー数: どうやって出す？
   - Count-distinct problemとよばれる
-  - ナイーブな方法だとどうしても非効率になる
+  - すべての要素を覚えておく必要があるため、ナイーブな方法だとどうしても非効率になる
 
 ---
 
@@ -64,7 +65,7 @@ class UniqueUserStats {
 
 ## Batch approach
 
-- 以下のようなSQLで事前にUU数を集計しておく
+- 以下のようなSQLで事前にログを集計して、たとえばMySQLなどのレポートDBに入れておく
 
 ```sql
 SELECT
@@ -75,7 +76,7 @@ GROUP BY
   url
 ```
 
-- "リアルタイム"要件をみたせない
+- "リアルタイム"がみたせない
 
 ---
 
@@ -84,8 +85,16 @@ GROUP BY
 - 確率的アルゴリズムによる近似値を使う
 - **HyperLogLog**
   - Philippe Flajolet et al., 2007. HyperLogLog: the analysis of a near-optimal cardinality estimation algorithm
-  - 集合のcardinality(要素数)をO(1) spaceで高精度に近似できる
+  - 集合のcardinality(要素数)をO(1) spaceで高精度に推定できる
   - このスライドでは以下HLLと省略
+
+---
+
+## HyperLogLog
+
+- 様々なミドルウェアにHLLを用いたapprox distinctが搭載されている
+  - Redis, Presto, Redshift, BigQuery,...
+- 16KBで、数十億を超えるcardinalityを0.81%の誤差で近似
 
 ---
 
@@ -135,14 +144,14 @@ GROUP BY
 
 ---
 
-## Stochastic averaging
+## Improve accuracy
 
 - これだけだと精度が悪いし、2^k単位でしか近似できない
 - 複数のhash関数を使ってその平均を取ることで精度が向上する
 
 ---
 
-## Stochastic averaging
+## Improve accuracy
 
 - データセットの各要素に対し複数のhash関数をかけるのは時間がかかる
 - かわりに、ハッシュ値の先頭`p` bitを使って、`m = 2^p`個のbucketに振り分ける
@@ -263,11 +272,11 @@ $ redis-cli PFCOUNT foo
 - ハッシュ値の衝突
   - だが一般的にはハッシュのpre imageを求めるのは困難
 - 同じbucketへの振り分けられて、かつ上位0 bitが同じ数連続している場合
-  - 98567648, 19857710,...はすべて、Redis HLLにおいて`bucket = 0 && 連続する0のbit数 = 0`になる
+  - 前述の98567648, 19857710,...はすべて、Redis HLLにおいて同じbucketかつ同じ数0-bit数が連続する
 
 ---
 
-## Streaming update
+## HLL feature: Streaming update
 
 - HLL sketch全体を再構築することなく要素を追加できる
 
@@ -283,7 +292,7 @@ public void add(String element) {
 
 ---
 
-## Merge two sketches
+## HLL feature: Merge two sketches
 
 - ２つのHLL sketchはloss lessでmergeできる
   - (bucket数やhash関数は同じ前提)
@@ -292,7 +301,7 @@ public void add(String element) {
 
 ---
 
-## Merge two sketches
+## HLL feature: Merge two sketches
 
 ```java
 public byte[] merge(byte[] sketch1, byte[] sketch2) {
@@ -309,7 +318,7 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 
 ---
 
-## Easy to parallelize
+## HLL feature: Easy to parallelize
 
 - mergeがloss lessなので、大量のデータセットのHLL sketch構築は容易に並列化できる
 
@@ -330,6 +339,8 @@ public byte[] merge(byte[] sketch1, byte[] sketch2) {
 ## LogLog-Beta
 
 - Jason Qin et al., 2016. LogLog-Beta and More: A New Algorithm for Cardinality Estimation Based on LogLog Counting
+- オリジナルのHLLはcardinalityが小さいときに誤差が大きくなる
+- LogLog-Betaはすべてのcardinality rangeでよい精度を示す
 
 ![i011](img/i011.png)
 
@@ -401,25 +412,25 @@ $ redis-cli GET baz
 ## History
 
 - Redis 2.8.9で導入
-  - https://raw.githubusercontent.com/antirez/redis/2.8.9/00-RELEASENOTES
-- Linear CountingとHLLを併用
-  - HLLは小さいcardinalityに対して誤差が大きくなる
+  - http://antirez.com/news/75
+- Linear CountingとHLLの併用
+  - HLLは小さいcardinalityに対して誤差が大きくなるため、閾値を超えるまではHLLでなくLinear Countingを使う
   - Flajolet et al., 2007でも提案されている手法
 
 ---
 
 ## Redis v4.0.0
 
-- https://raw.githubusercontent.com/antirez/redis/4.0.0/00-RELEASENOTES
-- estimationがLogLog-Betaに切り替わった
-- Linear Countingを使わなくなった
+- https://github.com/influxdata/influxdb/pull/8512
+- アルゴリズムがLogLog-Betaに切り替わった
+  - Linear Countingを併用しなくなった
 
 ---
 
 ## Redis v5.0.0
 
-- https://raw.githubusercontent.com/antirez/redis/5.0.0/00-RELEASENOTES
-- estimationがOtmar Ertl, 2017. による方式に切り替わった
+- https://github.com/antirez/redis/pull/4749
+- LogLog-Betaから、Otmar Ertl, 2017. による方式に切り替わった
 
 ---
 
@@ -428,7 +439,7 @@ $ redis-cli GET baz
 - RedisはHLL sketchを2通りでencodeする
   - sparse representation
   - dense representation
-- Redis HLLのbinary表現は以下
+- Redis HLLは以下の構造を持つ
 
 ```c
 struct hllhdr {
