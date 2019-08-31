@@ -14,6 +14,8 @@
 
 ---
 
+<br>
+
 ![i001](img/i001.png)
 
 ---
@@ -159,6 +161,8 @@ GROUP BY
 
 ---
 
+<br>
+
 ![i006](img/i006.png)
 
 ---
@@ -271,7 +275,7 @@ $ redis-cli PFCOUNT foo
 
 - ハッシュ値の衝突
   - だが一般的にはハッシュのpre imageを求めるのは困難
-- 同じbucketへの振り分けられて、かつ上位0 bitが同じ数連続している場合
+- 同じbucketへ振り分けられて、かつ上位0 bitが同じ数連続している場合
   - 前述の98567648, 19857710,...はすべて、Redis HLLにおいて同じbucketかつ同じ数0-bit数が連続する
 
 ---
@@ -421,7 +425,7 @@ $ redis-cli GET baz
 
 ## Redis v4.0.0
 
-- https://github.com/influxdata/influxdb/pull/8512
+- https://github.com/antirez/redis/pull/3677
 - アルゴリズムがLogLog-Betaに切り替わった
   - Linear Countingを併用しなくなった
 
@@ -430,7 +434,7 @@ $ redis-cli GET baz
 ## Redis v5.0.0
 
 - https://github.com/antirez/redis/pull/4749
-- LogLog-Betaから、Otmar Ertl, 2017. による方式に切り替わった
+- LogLog-Betaから、Otmar Ertl, 2017. によるアルゴリズムに切り替わった
 
 ---
 
